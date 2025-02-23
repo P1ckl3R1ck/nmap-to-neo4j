@@ -157,8 +157,11 @@ def parse_nmap_file(filename):
 
     hosts = xmljson['nmaprun']['host']
 
-    for host in hosts :
-        res.append(extract_nmap_host_information(host))
+    if isinstance(hosts, dict):
+            res.append(extract_nmap_host_information(hosts))
+    elif isinstance(hosts, list):
+        for host in hosts :
+            res.append(extract_nmap_host_information(host))
 
     return res
 
