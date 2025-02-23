@@ -155,13 +155,13 @@ def parse_nmap_file(filename):
     except:
         raise Exception(f"Failed to parse XML data : wrong format !")
 
-    hosts = xmljson['nmaprun']['host']
-
-    if isinstance(hosts, dict):
-            res.append(extract_nmap_host_information(hosts))
-    elif isinstance(hosts, list):
-        for host in hosts :
-            res.append(extract_nmap_host_information(host))
+    if 'host' in xmljson['nmaprun'].keys():
+        hosts = xmljson['nmaprun']['host']
+        if isinstance(hosts, dict):
+                res.append(extract_nmap_host_information(hosts))
+        elif isinstance(hosts, list):
+            for host in hosts :
+                res.append(extract_nmap_host_information(host))
 
     return res
 
