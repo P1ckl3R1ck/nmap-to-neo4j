@@ -1,15 +1,14 @@
 import argparse
-import re
-import xmltodict
-
-from neo4j import GraphDatabase
 from os import path as os_path
 from sys import exit as sys_exit
 
+import xmltodict
+from neo4j import GraphDatabase
+
 from queries import insert
 
-def create_arg_parser():
 
+def create_arg_parser():
     parser = argparse.ArgumentParser(description="Nmap-to-Neo4j Graph Database Utility")
     parser.add_argument(
         "-b",
@@ -61,85 +60,81 @@ def create_arg_parser():
     )
     return parser
 
-def create_neo4j_driver(bolt, neo_port, neo_user, neo_pass):
 
+def create_neo4j_driver(bolt, neo_port, neo_user, neo_pass):
     uri = "neo4j://{}:{}".format(bolt, neo_port)
     driver = GraphDatabase.driver(uri, auth=(neo_user, neo_pass))
 
     return driver
 
-def populate_neo4j_database(data, driver, attacking_ip):
 
+def populate_neo4j_database(data, driver, attacking_ip):
     session = driver.session()
     for entry in data:
-        if entry['host_info']['ip'] != attacking_ip:
+        if entry["host_info"]["ip"] != attacking_ip:
             session.execute_write(insert.create_nodes, entry)
 
-def parse_port_protocol_info_(port):
 
+def parse_port_protocol_info_(port):
     port_info = {}
 
-    port_info['no'] = port['@portid']
-    port_info['state'] = port['state']['@state']
-    port_info['protocol'] = port['@protocol']
-    port_info['service'] = port['service']['@name']
+    port_info["no"] = port["@portid"]
+    port_info["state"] = port["state"]["@state"]
+    port_info["protocol"] = port["@protocol"]
+    port_info["service"] = port["service"]["@name"]
 
-    if '@product' in port['service']:
-        port_info['sunrpcinfo'] = port['service']['@product']
-        port_info['versioninfo'] = port['service']['@version']
+    if "@product" in port["service"]:
+        port_info["sunrpcinfo"] = port["service"]["@product"]
+        port_info["versioninfo"] = port["service"]["@version"]
     else:
-        port_info['sunrpcinfo'] = ''
-        port_info['versioninfo'] = ''
+        port_info["sunrpcinfo"] = ""
+        port_info["versioninfo"] = ""
 
     return port_info
 
-def parse_port_protocol_info(data):
 
+def parse_port_protocol_info(data):
     details = []
 
-    if 'port' in data['ports'].keys():
-
-        if isinstance(data['ports']['port'], dict):
-            ports = [data['ports']['port']]
-        elif isinstance(data['ports']['port'], list):
-            ports = data['ports']['port']
+    if "port" in data["ports"].keys():
+        if isinstance(data["ports"]["port"], dict):
+            ports = [data["ports"]["port"]]
+        elif isinstance(data["ports"]["port"], list):
+            ports = data["ports"]["port"]
         else:
             raise Exception("Failed to parse nmap information : port not found !")
 
         for port in ports:
-            if (port['state']['@state'] == "open") :
+            if port["state"]["@state"] == "open":
                 port_info = parse_port_protocol_info_(port)
                 details.append(port_info)
-            
+
         return details
 
     else:
         return None
 
+
 def extract_nmap_host_information(data):
-
-    if data['hostnames']:
-        if isinstance(data['hostnames'], dict):
-            hostname = data['hostnames']['hostname']['@name']
-        elif isinstance(data['hostnames'], list):
-            hostname = data['hostnames'][0]['hostname']['@name']
+    if data["hostnames"]:
+        if isinstance(data["hostnames"], dict):
+            hostname = data["hostnames"]["hostname"]["@name"]
+        elif isinstance(data["hostnames"], list):
+            hostname = data["hostnames"][0]["hostname"]["@name"]
     else:
-        hostname = ''
+        hostname = ""
 
-    address = data['address']['@addr']
+    address = data["address"]["@addr"]
 
     host = {
-        'host_info': {
-            'hostname': hostname,
-            'ip': address
-        },
-        'port_info': parse_port_protocol_info(data)
+        "host_info": {"hostname": hostname, "ip": address},
+        "port_info": parse_port_protocol_info(data),
     }
 
     return host
 
-def parse_nmap_file(filename):
 
+def parse_nmap_file(filename):
     res = []
     filename = os_path.abspath(filename)
 
@@ -155,18 +150,18 @@ def parse_nmap_file(filename):
     except:
         raise Exception(f"Failed to parse XML data : wrong format !")
 
-    if 'host' in xmljson['nmaprun'].keys():
-        hosts = xmljson['nmaprun']['host']
+    if "host" in xmljson["nmaprun"].keys():
+        hosts = xmljson["nmaprun"]["host"]
         if isinstance(hosts, dict):
-                res.append(extract_nmap_host_information(hosts))
+            res.append(extract_nmap_host_information(hosts))
         elif isinstance(hosts, list):
-            for host in hosts :
+            for host in hosts:
                 res.append(extract_nmap_host_information(host))
 
     return res
 
-if __name__ == "__main__":
 
+if __name__ == "__main__":
     arg_paser = create_arg_parser()
     args = arg_paser.parse_args()
 
@@ -178,7 +173,7 @@ if __name__ == "__main__":
 
         if parsed_nmap_data_len > 0:
             print(f"[+] Found {parsed_nmap_data_len} hosts")
-        else: 
+        else:
             raise Exception("Failed to parse nmap information : no host found !")
     except Exception as e:
         print(f"[!] {e}")
