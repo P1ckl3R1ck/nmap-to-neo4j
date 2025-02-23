@@ -1,160 +1,193 @@
-#!/usr/bin/python3
-
 import argparse
 import re
+import xmltodict
+
 from neo4j import GraphDatabase
+from os import path as os_path
+from sys import exit as sys_exit
+
 from queries import insert
 
-def check_attacking_args(a):
-     if a.attacking_hostname and not a.attacking_ip:
-          print("[!] - Attacking-host needs to be supplied with an attacking-ip (-ai / --attacking-ip).")
-          exit()
-
 def create_arg_parser():
-     parser = argparse.ArgumentParser(description="Masscan-to-Neo4j Graph Database Utility")
-     parser.add_argument(
-          "-b",
-          "--bolt",
-          action="store",
-          dest="bolt",
-          help="Address of your bolt connector. Default, '127.0.0.1'",
-          required=False,
-          default="127.0.0.1",
-     )
-     parser.add_argument(
-          "-u",
-          "--username",
-          action="store",
-          dest="neo_user",
-          help="Username of the Neo4j user.  Default, 'neo4j'.",
-          required=False,
-          default="neo4j",
-     )
-     parser.add_argument(
-          "-p",
-          "--password",
-          dest="neo_pass",
-          help="Password of the Neo4j user.",
-          required=True,
-     )
-     parser.add_argument(
-          "-P",
-          "--port",
-          dest="neo_port",
-          help="Port of the bolt instance if not 7687.",
-          required=False,
-          default="7687",
-     )
-     parser.add_argument(
-          "-f",
-          "--file",
-          dest="nmap_file",
-          help="Scan of the grepable nmap file (-oG flag).",
-          required=True,
-     )
-     parser.add_argument(
-          "-ah",
-          "--attacking-host",
-          dest="attacking_hostname",
-          help="Hostname of the attacking machine.",
-     )
 
-     parser.add_argument(
-          "-ai",
-          "--attacking-ip",
-          dest="attacking_ip",
-          help="IP address of the attacking machine.",
-     )
-     return parser
+    parser = argparse.ArgumentParser(description="Nmap-to-Neo4j Graph Database Utility")
+    parser.add_argument(
+        "-b",
+        "--bolt",
+        action="store",
+        dest="bolt",
+        help="Address of your bolt connector. Default, '127.0.0.1'",
+        required=False,
+        default="127.0.0.1",
+    )
+    parser.add_argument(
+        "-u",
+        "--username",
+        action="store",
+        dest="neo_user",
+        help="Username of the Neo4j user.  Default, 'neo4j'.",
+        required=False,
+        default="neo4j",
+    )
+    parser.add_argument(
+        "-p",
+        "--password",
+        dest="neo_pass",
+        help="Password of the Neo4j user.",
+        required=True,
+    )
+    parser.add_argument(
+        "-P",
+        "--port",
+        dest="neo_port",
+        help="Port of the bolt instance if not 7687.",
+        required=False,
+        default="7687",
+    )
+    parser.add_argument(
+        "-f",
+        "--file",
+        dest="nmap_file",
+        help="Scan of the XML nmap file (-oX flag).",
+        required=True,
+    )
+    parser.add_argument(
+        "-ai",
+        "--attacking-ip",
+        dest="attacking_ip",
+        help="IP address of the attacking machine to exclude from import.",
+        required=False,
+        default=None,
+    )
+    return parser
 
 def create_neo4j_driver(bolt, neo_port, neo_user, neo_pass):
-     uri = "neo4j://{}:{}".format(bolt, neo_port)
-     print("Connecting to {}".format(uri))
-     driver = GraphDatabase.driver(uri, auth=(neo_user, neo_pass))
-     return driver
+
+    uri = "neo4j://{}:{}".format(bolt, neo_port)
+    driver = GraphDatabase.driver(uri, auth=(neo_user, neo_pass))
+
+    return driver
+
+def populate_neo4j_database(data, driver, attacking_ip):
+
+    session = driver.session()
+    for entry in data:
+        if entry['host_info']['ip'] != attacking_ip:
+            session.execute_write(insert.create_nodes, entry)
+
+def parse_port_protocol_info_(port):
+
+    port_info = {}
+
+    port_info['no'] = port['@portid']
+    port_info['state'] = port['state']['@state']
+    port_info['protocol'] = port['@protocol']
+    port_info['service'] = port['service']['@name']
+
+    if '@product' in port['service']:
+        port_info['sunrpcinfo'] = port['service']['@product']
+        port_info['versioninfo'] = port['service']['@version']
+    else:
+        port_info['sunrpcinfo'] = ''
+        port_info['versioninfo'] = ''
+
+    return port_info
+
+def parse_port_protocol_info(data):
+
+    details = []
+
+    if 'port' in data['ports'].keys():
+
+        if isinstance(data['ports']['port'], dict):
+            ports = [data['ports']['port']]
+        elif isinstance(data['ports']['port'], list):
+            ports = data['ports']['port']
+        else:
+            raise Exception("Failed to parse nmap information : port not found !")
+
+        for port in ports:
+            if (port['state']['@state'] == "open") :
+                port_info = parse_port_protocol_info_(port)
+                details.append(port_info)
+            
+        return details
+
+    else:
+        return None
 
 def extract_nmap_host_information(data):
-     split_data = data.split("\t")
-     host_line = split_data[0]
-     portinfo_line = split_data[1]
 
-     has_open_port_pattern = "[0-9]{1,5}/open/"
+    if data['hostnames']:
+        if isinstance(data['hostnames'], dict):
+            hostname = data['hostnames']['hostname']['@name']
+        elif isinstance(data['hostnames'], list):
+            hostname = data['hostnames'][0]['hostname']['@name']
+    else:
+        hostname = ''
 
-     has_open_ports = re.search(has_open_port_pattern, portinfo_line)
+    address = data['address']['@addr']
 
-     if has_open_ports is None:
-          return None
+    host = {
+        'host_info': {
+            'hostname': hostname,
+            'ip': address
+        },
+        'port_info': parse_port_protocol_info(data)
+    }
 
-     ipv4_pattern = "([0-9]{1,3}\.){3}[0-9]{1,3}"
+    return host
 
-     extracted_ipv4_addr = re.search(ipv4_pattern, host_line).group()
-     extracted_hostname = host_line.split("(")[1].split(")")[0]
+def parse_nmap_file(filename):
 
-     port_line = portinfo_line.split("Ports: ")[1]
-     port_data = parse_port_protocol_info(port_line)
+    res = []
+    filename = os_path.abspath(filename)
 
-     host = {
-          'host_info': {
-               'hostname': extracted_hostname,
-               'ip': extracted_ipv4_addr
-          },
-          'port_info': port_data
-     }
+    try:
+        xml_file = open(filename)
+        xml_content = xml_file.read()
+        xml_file.close()
+    except:
+        raise Exception(f"Failed to read nmap scan file : {filename} !")
 
-     return host
+    try:
+        xmljson = xmltodict.parse(xml_content)
+    except:
+        raise Exception(f"Failed to parse XML data : wrong format !")
 
-def open_nmap_file(file):
-     print("Opening nmap file.")
-     return open(file, 'r')
+    hosts = xmljson['nmaprun']['host']
 
-def parse_nmap_file(file):
-     up_host_regex_pattern = "Host:\s([0-9]{1,3}\.?){4}\s\(([a-zA-Z0-9\.\-\_]+)?\)\sPorts:" # Find up hosts that have port info. 
-     entries = []
-     nmap_file = open_nmap_file(file)
-     for line in nmap_file:
-          match = re.search(up_host_regex_pattern, line)
-          if match:
-               data = extract_nmap_host_information(line)
-               if data is not None:
-                    entries.append(data)
+    for host in hosts :
+        res.append(extract_nmap_host_information(host))
 
-     print ("{} host to add.".format(len(entries)))
-     return entries
-
-def parse_port_protocol_info(info):
-     details = []
-     port_lines = info.split(" ")
-
-     for p in port_lines:
-          if "open" in p:
-               d = p.split("/")
-
-               port_info = {
-                    'no': d[0],
-                    'state': d[1],
-                    'protocol': d[2],
-                    'owner': d[3],
-                    'service': d[4],
-                    'sunrpcinfo': d[5],
-                    'versioninfo': d[6]
-               }
-               details.append(port_info)
-     return details
-
-def populate_neo4j_database(data, driver, a):
-     for entry in data:
-          with driver.session() as session:
-               session.write_transaction(insert.create_nodes, entry,  a)
+    return res
 
 if __name__ == "__main__":
-     arg_paser = create_arg_parser()
-     args = arg_paser.parse_args()
 
-     check_attacking_args(args)
+    arg_paser = create_arg_parser()
+    args = arg_paser.parse_args()
 
-     driver = create_neo4j_driver(args.bolt, args.neo_port, args.neo_user, args.neo_pass)
-     parsed_nmap_data = parse_nmap_file(args.nmap_file)
+    try:
+        parse_nmap_file(args.nmap_file)
+        print("[*] Parsing nmap data...")
+        parsed_nmap_data = parse_nmap_file(args.nmap_file)
+        parsed_nmap_data_len = len(parsed_nmap_data)
 
-     populate_neo4j_database(parsed_nmap_data, driver, args)
+        if parsed_nmap_data_len > 0:
+            print(f"[+] Found {parsed_nmap_data_len} hosts")
+        else: 
+            raise Exception("Failed to parse nmap information : no host found !")
+    except Exception as e:
+        print(f"[!] {e}")
+        sys_exit(-1)
 
-     print("Done Syncing!")
+    driver = create_neo4j_driver(args.bolt, args.neo_port, args.neo_user, args.neo_pass)
+
+    try:
+        print("[*] Syncing...")
+        populate_neo4j_database(parsed_nmap_data, driver, args.attacking_ip)
+    except Exception as e:
+        print(f"[!] {e}")
+        sys_exit(-1)
+    finally:
+        print("[+] Done syncing")

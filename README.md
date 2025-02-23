@@ -1,35 +1,33 @@
 # nmap-to-neo4j
 Simple python script for importing Nmap results to a Neo4j Graph Database.
 
-> [For a masscan version, click here.](https://github.com/passkwall/masscan-to-neo4j)
-
-
 ![](2022-03-11_12-17-03.png)
 
-## Usage
 
-First, run a nmap scan in your network. Save the results with the greppable flag (`-oG`).
+## Usage
+First, run a nmap scan in your network. Save the results with the XML flag (`-oX`).
 ```
-sudo nmap 192.168.1.1/24 --top-ports=100 -oG nmap_results
+nmap -sV 192.168.1.1/24 -oX nmap_results
 ```
 
 Now start your Neo4j instance and run the `nmap-to-neo4j.py` script.
 ```
-python3 nmap-to-neo4j.py -p neo4j_password -f nmap_results --attacking-host kali-beta --attacking-ip 10.0.0.2
+python3 nmap-to-neo4j.py -p neo4j_password -f nmap_results --attacking-ip 10.0.0.2
 ```
 
 
 ## Installation Prerequisites 
-1. [Neo4j Community Edition](https://neo4j.com/download-center/) (tested on 4.4.4)
+1. [Neo4j Community Edition](https://neo4j.com/download-center/) (tested on 5.27.0)
 2. Python3
-3. Python virtualenv (recommended)
+3. Python pipenv (recommended)
 
 
 ## Setup
 ```
-virtualenv venv
-pip3 install -r requirements
+pipenv shell
+pipenv install
 ```
+
 
 ## Querying Results
 Neo4j is complicated at times, but this tool is super simple. I generally recommend a few of the following queries:
@@ -43,6 +41,11 @@ match (a:Port) return a
 #### Find and return all hosts
 ```
 match (a:Host) return a
+
+```
+#### Find and return all hosts with open ports
+```
+MATCH (p:Port)-[:OPEN]->(h:Host) RETURN h
 ```
 
 #### Find and return a specific host and its ports
