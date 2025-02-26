@@ -70,7 +70,7 @@ def create_neo4j_driver(
     bolt: str, neo_port: str, neo_user: str, neo_pass: str
 ) -> GraphDatabase.driver:
 
-    uri = "neo4j://{}:{}".format(bolt, neo_port)
+    uri = f"neo4j://{bolt}:{neo_port}"
     driver = GraphDatabase.driver(uri, auth=(neo_user, neo_pass))
 
     return driver
@@ -79,10 +79,10 @@ def populate_neo4j_database(
     data: List[Dict], driver: GraphDatabase.driver, attacking_ip: Optional[str]
 ) -> None:
 
-    session = driver.session()
-    for entry in data:
-        if entry['host_info']['ip'] != attacking_ip:
-            session.execute_write(insert.create_nodes, entry)
+    with driver.session() as session:
+        for entry in data:
+            if entry["host_info"]["ip"] != attacking_ip:
+                session.execute_write(insert.create_nodes, entry)
 
 def parse_port_protocol_info_(port: Dict) -> Dict[str, str]:
 
