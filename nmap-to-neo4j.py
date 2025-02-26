@@ -1,5 +1,6 @@
 import argparse
 import logging
+
 from pathlib import Path
 from sys import exit as sys_exit
 from typing import Dict, List, Optional
@@ -12,56 +13,79 @@ from queries import insert
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-
 def create_arg_parser() -> argparse.ArgumentParser:
+
     parser = argparse.ArgumentParser(description="Nmap-to-Neo4j Graph Database Utility")
     parser.add_argument(
         "-b",
         "--bolt",
-        default="127.0.0.1",
+        action="store",
+        dest="bolt",
         help="Address of your bolt connector (default: '127.0.0.1')",
+        required=False,
+        default="127.0.0.1",
     )
     parser.add_argument(
         "-u",
         "--username",
-        default="neo4j",
+        action="store",
+        dest="neo_user",
         help="Username of the Neo4j user (default: 'neo4j')",
+        required=False,
+        default="neo4j",
     )
     parser.add_argument(
-        "-p", "--password", required=True, help="Password of the Neo4j user"
+        "-p",
+        "--password",
+        dest="neo_pass",
+        help="Password of the Neo4j user",
+        required=True,
     )
     parser.add_argument(
-        "-P", "--port", default="7687", help="Port of the bolt instance (default: 7687)"
+        "-P",
+        "--port",
+        dest="neo_port",
+        help="Port of the bolt instance (default: 7687)",
+        required=False,
+        default="7687",
     )
     parser.add_argument(
-        "-f", "--file", required=True, help="Scan of the XML nmap file (-oX flag)"
+        "-f",
+        "--file",
+        dest="nmap_file",
+        help="Scan of the XML nmap file (-oX flag)",
+        required=True,
     )
     parser.add_argument(
         "-ai",
         "--attacking-ip",
-        default=None,
+        dest="attacking_ip",
         help="IP address of the attacking machine to exclude from import",
+        required=False,
+        default=None,
     )
     return parser
-
 
 def create_neo4j_driver(
     bolt: str, neo_port: str, neo_user: str, neo_pass: str
 ) -> GraphDatabase.driver:
-    uri = f"neo4j://{bolt}:{neo_port}"
-    return GraphDatabase.driver(uri, auth=(neo_user, neo_pass))
 
+    uri = "neo4j://{}:{}".format(bolt, neo_port)
+    driver = GraphDatabase.driver(uri, auth=(neo_user, neo_pass))
+
+    return driver
 
 def populate_neo4j_database(
     data: List[Dict], driver: GraphDatabase.driver, attacking_ip: Optional[str]
 ) -> None:
-    with driver.session() as session:
-        for entry in data:
-            if entry["host_info"]["ip"] != attacking_ip:
-                session.execute_write(insert.create_nodes, entry)
 
+    session = driver.session()
+    for entry in data:
+        if entry['host_info']['ip'] != attacking_ip:
+            session.execute_write(insert.create_nodes, entry)
 
 def parse_port_protocol_info_(port: Dict) -> Dict[str, str]:
+
     port_info = {
         "no": port["@portid"],
         "state": port["state"]["@state"],
@@ -70,10 +94,11 @@ def parse_port_protocol_info_(port: Dict) -> Dict[str, str]:
         "sunrpcinfo": port["service"].get("@product", ""),
         "versioninfo": port["service"].get("@version", ""),
     }
+
     return port_info
 
-
 def parse_port_protocol_info(data: Dict) -> List[Dict[str, str]]:
+
     if "port" in data["ports"]:
         ports = (
             [data["ports"]["port"]]
@@ -85,10 +110,11 @@ def parse_port_protocol_info(data: Dict) -> List[Dict[str, str]]:
             for port in ports
             if port["state"]["@state"] == "open"
         ]
+
     return []
 
-
 def extract_nmap_host_information(data: Dict) -> Dict[str, Dict[str, str]]:
+
     hostname = ""
     if data.get("hostnames"):
         hostnames = data["hostnames"]
@@ -99,13 +125,14 @@ def extract_nmap_host_information(data: Dict) -> Dict[str, Dict[str, str]]:
         )
 
     address = data["address"]["@addr"]
+
     return {
         "host_info": {"hostname": hostname, "ip": address},
         "port_info": parse_port_protocol_info(data),
     }
 
-
 def parse_nmap_file(filename: str) -> List[Dict[str, Dict[str, str]]]:
+
     filename = Path(filename).resolve()
 
     try:
@@ -120,16 +147,16 @@ def parse_nmap_file(filename: str) -> List[Dict[str, Dict[str, str]]]:
         raise Exception(f"Failed to parse XML data: wrong format! {e}")
 
     hosts = xmljson.get("nmaprun", {}).get("host", [])
-    if isinstance(hosts, dict):
+    if isinstance(hosts, dict) and len(hosts) > 0:
         return [extract_nmap_host_information(hosts)]
-    elif isinstance(hosts, list):
+    elif isinstance(hosts, list) and len(hosts) > 0:
         return [extract_nmap_host_information(host) for host in hosts]
     return []
 
-
 if __name__ == "__main__":
-    arg_parser = create_arg_parser()
-    args = arg_parser.parse_args()
+
+    arg_paser = create_arg_parser()
+    args = arg_paser.parse_args()
 
     try:
         logger.info("Parsing nmap data...")

@@ -1,9 +1,8 @@
 from typing import Dict, Optional
-
 from neo4j import Transaction
 
-
 def create_nodes(tx: Transaction, infos: Dict[str, Dict[str, Optional[str]]]) -> None:
+    
     host = infos["host_info"]
 
     if infos["port_info"]:
@@ -15,6 +14,7 @@ def create_nodes(tx: Transaction, infos: Dict[str, Dict[str, Optional[str]]]) ->
 
 
 def insert_host_only(tx: Transaction, host: Dict[str, str]) -> None:
+    
     tx.run(
         "MERGE(h:Host {ip: $ip, hostname: $hostname})",
         hostname=host["hostname"],
@@ -25,6 +25,7 @@ def insert_host_only(tx: Transaction, host: Dict[str, str]) -> None:
 def insert_host_with_port(
     tx: Transaction, host: Dict[str, str], port: Dict[str, str]
 ) -> None:
+
     tx.run(
         "MERGE(p:Port {port: $port, state: $state, protocol: $protocol, service: $service, sunrpcinfo: $sunrpcinfo, versioninfo: $versioninfo})"
         "MERGE(h:Host {ip: $ip, hostname: $hostname})"
